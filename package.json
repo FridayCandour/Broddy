@@ -1,0 +1,25 @@
+{
+  "name": "broddy",
+  "version": "1.0.0",
+  "description": "copy any SPA or static sites",
+  "type": "module",
+  "bin": {
+    "broddy": "./index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mirror",
+    "clone",
+    "framer",
+    "static",
+    "scraper",
+    "copy"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "node-fetch": "^3.3.2"
+  }
+}
