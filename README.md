@@ -21,13 +21,16 @@ npm i -g broddy
 ## usage
 
 ```
-broddy <url> [folder]
+broddy <url> [--sourcemaps] [output-folder]
 
 # explicit pages
 broddy https://site.com / /about /pricing cool-site
 
 # auto crawl depth-1
 broddy https://site.com
+
+# with source maps
+broddy https://site.com --sourcemaps
 ```
 
 ---
@@ -38,14 +41,15 @@ broddy https://site.com
 - grabs css/js/images/fonts  
 - rewrites links to `./assets`  
 - creates dirs for `/deep/nested` paths  
-- downloads dynamic chunks (webpack and vite)  
+- downloads dynamic chunks (webpack, vite, dynamic imports)  
+- handles source maps (with `--sourcemaps` flag)  
 - zero 404s after serving
 
 ---
 
 ## why
 
-wget/htttrack miss lazy chunks. broddy does not.
+wget/htttrack miss lazy chunks and dynamic imports. broddy handles them all.
 
 ---
 
