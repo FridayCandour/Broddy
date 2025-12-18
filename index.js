@@ -56,6 +56,8 @@ async function broddy(baseUrl, pages, outDir, enableSourceMaps) {
   const assetUrls = new Map(); // url -> type
   const processedAssets = new Set();
   const sourceMapUrls = new Map(); // original file -> source map url
+  const filePathMap = new Map(); // url -> final file path (for collision handling)
+  const usedPaths = new Set(); // track all used file paths to prevent collisions
 
   const save = async (p, data) => {
     const filePath = path.join(outDir, p);
@@ -70,6 +72,11 @@ async function broddy(baseUrl, pages, outDir, enableSourceMaps) {
   };
 
   const assetPath = (url) => {
+    // Check if we already have a path for this URL
+    if (filePathMap.has(url)) {
+      return filePathMap.get(url);
+    }
+
     const { pathname, search } = new URL(url, baseUrl);
     let filePath = pathname;
 
@@ -90,6 +97,21 @@ async function broddy(baseUrl, pages, outDir, enableSourceMaps) {
       }
     }
 
+    // Handle filename collisions
+    if (usedPaths.has(filePath)) {
+      const ext = path.extname(filePath);
+      const nameWithoutExt = filePath.slice(0, -ext.length);
+      let counter = 1;
+      let newPath = `${nameWithoutExt}-${counter}${ext}`;
+      while (usedPaths.has(newPath)) {
+        counter++;
+        newPath = `${nameWithoutExt}-${counter}${ext}`;
+      }
+      filePath = newPath;
+    }
+
+    usedPaths.add(filePath);
+    filePathMap.set(url, filePath);
     return filePath;
   };
 
@@ -350,7 +372,16 @@ async function broddy(baseUrl, pages, outDir, enableSourceMaps) {
     }
   }
 
-  /* 4. Download all assets */
+  /* 4. Pre-compute all asset paths to detect collisions early */
+  for (const url of assetUrls.keys()) {
+    const { pathname } = new URL(url, baseUrl);
+    // Skip root paths and HTML pages
+    if (pathname === "/" || pathname.endsWith(".html")) continue;
+    // Pre-compute path to register it in usedPaths
+    assetPath(url);
+  }
+
+  /* 5. Download all assets */
   console.log(`📦 Downloading ${assetUrls.size} assets...`);
   const downloadedAssets = new Map();
 
@@ -435,12 +466,12 @@ async function broddy(baseUrl, pages, outDir, enableSourceMaps) {
     }
   }
 
-  /* 5. Save assets and update references in all files */
+  /* 6. Save assets and update references in all files */
   for (const [url, content] of downloadedAssets) {
     await save(assetPath(url), content);
   }
 
-  /* 6. No URL rewriting needed - assets are at their original paths */
+  /* 7. No URL rewriting needed - assets are at their original paths */
 
   console.log(`\n🎉 Done! Mirror saved to: ${path.resolve(outDir)}`);
   console.log(
