@@ -391,8 +391,19 @@ async function broddy(baseUrl, pages, outDir, enableSourceMaps) {
       // Skip root paths and HTML pages
       if (pathname === "/" || pathname.endsWith(".html")) continue;
 
-      const content = await download(url);
       const filePath = assetPath(url);
+      const fullPath = path.join(outDir, filePath);
+
+      // Check if file already exists
+      try {
+        await fs.stat(fullPath);
+        console.log(`⏭️  ${path.basename(filePath)} (cached)`);
+        continue;
+      } catch {
+        // File doesn't exist, proceed with download
+      }
+
+      const content = await download(url);
 
       // If source maps are enabled and this is a JS file, check for source map
       if (enableSourceMaps && (type === "js" || type === "mjs")) {
@@ -421,12 +432,20 @@ async function broddy(baseUrl, pages, outDir, enableSourceMaps) {
             )}: ${sourceMapUrl}`
           );
           try {
-            const mapContent = await download(sourceMapUrl);
-            const mapData = JSON.parse(mapContent.toString("utf8"));
-
-            // Save the source map
             const mapPath = `${assetPath(url)}.map`;
-            await save(mapPath, mapContent);
+            const mapFullPath = path.join(outDir, mapPath);
+
+            // Check if source map already exists
+            let mapContent;
+            try {
+              mapContent = await fs.readFile(mapFullPath);
+            } catch {
+              // Map doesn't exist, download it
+              mapContent = await download(sourceMapUrl);
+              await save(mapPath, mapContent);
+            }
+
+            const mapData = JSON.parse(mapContent.toString("utf8"));
 
             // Update the source map reference in the JS file
             const mapFileName = path.basename(mapPath);
