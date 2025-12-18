@@ -1,6 +1,6 @@
 {
   "name": "broddy",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "copy any SPA or static sites",
   "type": "module",
   "bin": {
