@@ -148,6 +148,149 @@ async function broddy(baseUrl, pages, outDir, enableSourceMaps) {
     ],
   };
 
+  // Calculate relative path from source file to target file
+  const getRelativePath = (fromFilePath, toFilePath) => {
+    // Both paths are relative to outDir
+    const fromDir = path.dirname(fromFilePath);
+    const relative = path.relative(fromDir, toFilePath);
+    // Normalize to forward slashes for web
+    return relative.split(path.sep).join("/");
+  };
+
+  // Rewrite URLs in file content
+  const rewriteUrls = (content, fileUrl, fileType) => {
+    const baseUrlObj = new URL(baseUrl);
+    const fileUrlObj = new URL(fileUrl, baseUrl);
+    const filePath = assetPath(fileUrl);
+
+    // Only rewrite if file is from the same origin
+    if (fileUrlObj.origin !== baseUrlObj.origin) {
+      return content;
+    }
+
+    let rewritten = content;
+
+    if (fileType === "js" || fileType === "mjs") {
+      // Rewrite import/require statements
+      rewritten = rewritten.replace(
+        /(['"`])([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^'"`\s]+)\1/g,
+        (match, quote, url) => {
+          try {
+            const urlObj = new URL(url);
+            if (urlObj.origin === baseUrlObj.origin && filePathMap.has(url)) {
+              const targetPath = filePathMap.get(url);
+              const relativePath = getRelativePath(filePath, targetPath);
+              return `${quote}${relativePath}${quote}`;
+            }
+          } catch {
+            /* ignore */
+          }
+          return match;
+        }
+      );
+
+      // Rewrite fetch() calls
+      rewritten = rewritten.replace(
+        /fetch\s*\(\s*(['"`])([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^'"`\s]+)\1/g,
+        (match, quote, url) => {
+          try {
+            const urlObj = new URL(url);
+            if (urlObj.origin === baseUrlObj.origin && filePathMap.has(url)) {
+              const targetPath = filePathMap.get(url);
+              const relativePath = getRelativePath(filePath, targetPath);
+              return `fetch(${quote}${relativePath}${quote}`;
+            }
+          } catch {
+            /* ignore */
+          }
+          return match;
+        }
+      );
+
+      // Rewrite new URL() calls
+      rewritten = rewritten.replace(
+        /new\s+URL\s*\(\s*(['"`])([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^'"`\s]+)\1/g,
+        (match, quote, url) => {
+          try {
+            const urlObj = new URL(url);
+            if (urlObj.origin === baseUrlObj.origin && filePathMap.has(url)) {
+              const targetPath = filePathMap.get(url);
+              const relativePath = getRelativePath(filePath, targetPath);
+              return `new URL(${quote}${relativePath}${quote}`;
+            }
+          } catch {
+            /* ignore */
+          }
+          return match;
+        }
+      );
+    }
+
+    if (fileType === "css") {
+      // Rewrite url() in CSS
+      rewritten = rewritten.replace(
+        /url\s*\(\s*(['"]?)([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^)]+?)\1\s*\)/g,
+        (match, quote, url) => {
+          try {
+            const cleanUrl = url.trim();
+            const urlObj = new URL(cleanUrl);
+            if (
+              urlObj.origin === baseUrlObj.origin &&
+              filePathMap.has(cleanUrl)
+            ) {
+              const targetPath = filePathMap.get(cleanUrl);
+              const relativePath = getRelativePath(filePath, targetPath);
+              return `url(${quote}${relativePath}${quote})`;
+            }
+          } catch {
+            /* ignore */
+          }
+          return match;
+        }
+      );
+
+      // Rewrite @import in CSS
+      rewritten = rewritten.replace(
+        /@import\s+(?:url\s*\(\s*)?(['"])([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^'"]+?)\1(?:\s*\))?/g,
+        (match, quote, url) => {
+          try {
+            const urlObj = new URL(url);
+            if (urlObj.origin === baseUrlObj.origin && filePathMap.has(url)) {
+              const targetPath = filePathMap.get(url);
+              const relativePath = getRelativePath(filePath, targetPath);
+              return `@import url(${quote}${relativePath}${quote})`;
+            }
+          } catch {
+            /* ignore */
+          }
+          return match;
+        }
+      );
+    }
+
+    if (fileType === "json") {
+      // Rewrite URLs in JSON string values
+      rewritten = rewritten.replace(
+        /:\s*"([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^"]+?)"/g,
+        (match, url) => {
+          try {
+            const urlObj = new URL(url);
+            if (urlObj.origin === baseUrlObj.origin && filePathMap.has(url)) {
+              const targetPath = filePathMap.get(url);
+              const relativePath = getRelativePath(filePath, targetPath);
+              return `: "${relativePath}"`;
+            }
+          } catch {
+            /* ignore */
+          }
+          return match;
+        }
+      );
+    }
+
+    return rewritten;
+  };
+
   // Extract assets from code
   const extractAssets = (code, type, baseUrl) => {
     const found = new Set();
@@ -238,8 +381,65 @@ async function broddy(baseUrl, pages, outDir, enableSourceMaps) {
     const url = new URL(page, baseUrl).href;
     console.log("📄 Page:", url);
     const res = await fetch(url);
-    const html = await res.text();
+    let html = await res.text();
     const file = page === "/" ? "index.html" : `${page.slice(1)}.html`;
+
+    // Rewrite URLs in HTML using Cheerio
+    const $ = load(html);
+    const baseUrlObj = new URL(baseUrl);
+
+    // Rewrite href attributes
+    $("[href]").each((_, el) => {
+      const href = $(el).attr("href");
+      if (href && href.startsWith("http")) {
+        try {
+          const hrefUrl = new URL(href);
+          if (hrefUrl.origin === baseUrlObj.origin && filePathMap.has(href)) {
+            const targetPath = filePathMap.get(href);
+            const relativePath = getRelativePath(file, targetPath);
+            $(el).attr("href", relativePath);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+
+    // Rewrite src attributes
+    $("[src]").each((_, el) => {
+      const src = $(el).attr("src");
+      if (src && src.startsWith("http")) {
+        try {
+          const srcUrl = new URL(src);
+          if (srcUrl.origin === baseUrlObj.origin && filePathMap.has(src)) {
+            const targetPath = filePathMap.get(src);
+            const relativePath = getRelativePath(file, targetPath);
+            $(el).attr("src", relativePath);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+
+    // Rewrite data attributes
+    $("[data]").each((_, el) => {
+      const data = $(el).attr("data");
+      if (data && data.startsWith("http")) {
+        try {
+          const dataUrl = new URL(data);
+          if (dataUrl.origin === baseUrlObj.origin && filePathMap.has(data)) {
+            const targetPath = filePathMap.get(data);
+            const relativePath = getRelativePath(file, targetPath);
+            $(el).attr("data", relativePath);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+
+    html = $.html();
     await save(file, html);
     console.log(`✅ ${file}`);
   }
@@ -404,11 +604,21 @@ async function broddy(baseUrl, pages, outDir, enableSourceMaps) {
       }
 
       const content = await download(url);
+      let processedContent = content;
+
+      // Rewrite URLs in the downloaded content
+      try {
+        const contentStr = content.toString("utf8");
+        const rewritten = rewriteUrls(contentStr, url, type);
+        processedContent = Buffer.from(rewritten);
+      } catch (e) {
+        // If rewriting fails, use original content
+        console.warn(`    ⚠️  Failed to rewrite URLs: ${e.message}`);
+      }
 
       // If source maps are enabled and this is a JS file, check for source map
       if (enableSourceMaps && (type === "js" || type === "mjs")) {
-        const text = content.toString("utf8");
-        let processedContent = text;
+        const text = processedContent.toString("utf8");
 
         // Look for source map reference
         let sourceMapUrl = null;
