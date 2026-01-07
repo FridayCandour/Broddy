@@ -79,6 +79,11 @@ async function broddy(baseUrl, pages, outDir, enableSourceMaps) {
 
     const { pathname, search } = new URL(url, baseUrl);
     let filePath = pathname;
+    if (filePath.endsWith("/")) {
+      filePath += "index.html";
+    } else if (!path.extname(filePath)) {
+      filePath += ".html";
+    }
 
     if (search) {
       // For URLs with query strings, append a hash to the filename
@@ -382,7 +387,14 @@ async function broddy(baseUrl, pages, outDir, enableSourceMaps) {
     console.log("📄 Page:", url);
     const res = await fetch(url);
     let html = await res.text();
-    const file = page === "/" ? "index.html" : `${page.slice(1)}.html`;
+    let file = page.slice(1);
+    if (page === "/") {
+      file = "index.html";
+    } else if (page.endsWith("/")) {
+      file = file + "index.html";
+    } else if (!path.extname(file)) {
+      file = file + ".html";
+    }
 
     // Rewrite URLs in HTML using Cheerio
     const $ = load(html);
