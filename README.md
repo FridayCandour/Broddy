@@ -68,3 +68,8 @@ MIT – do whatever.
 ⭐ if it saved your day.
 
 And use legitimately
+caq-√
+blq-√
+ca-√
+bg-√
+bgq-√
